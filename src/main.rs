@@ -2,7 +2,11 @@ extern crate chrono;
 extern crate png;
 extern crate resize;
 extern crate clap;
+extern crate git2;
 
+use std::fs::OpenOptions;
+use git2::{Oid, Signature};
+use std::path::Path;
 use chrono::prelude::*;
 use resize::Pixel::Gray8;
 use resize::Type::Triangle;
@@ -11,11 +15,12 @@ use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{BufRead};
-use std::path::Path;
 use std::io::BufReader;
 use std::ops::Add;
 use std::time::Duration;
 use clap::{Arg, App, SubCommand};
+use std::io::Write;
+use git2::{Commit, ObjectType, Repository};
 
 fn main() {
     let matches = App::new("image-to-commits")
@@ -57,6 +62,19 @@ fn main() {
         println!("Must supply an image file!");
         return;
     };
+
+    let repo_root = "../banner/";
+    let repo = Repository::open(repo_root).expect("Couldn't open repository");
+    println!("{} state={:?}", repo.path().display(), repo.state());
+    let relative_path = Path::new("quotes.txt");
+    {
+        let file_path = Path::new(repo_root).join(relative_path);
+        let mut file = OpenOptions::new().write(true).create(true).open(file_path).expect("Could not create quotes file!");
+        file.write_all(get_quote().as_bytes()).unwrap();
+    }
+    let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
+        .expect("Couldn't add file to repo");
+    println!("New commit: {}", commit_id);
 
     let stamp = if let Ok(file) = File::open("init_timestamp.txt") {
         let mut reader = BufReader::new(file);
@@ -140,4 +158,32 @@ fn nth_day_of_year(day: usize, year: &Vec<u8>) -> usize {
     let row = day / 7;
     let col = day % 7;
     row * 7 + col
+}
+
+fn add_and_commit(repo: &Repository, path: &Path, message: &str) -> Result<Oid, git2::Error> {
+    let mut index = repo.index()?;
+    index.add_path(path)?;
+    let oid = index.write_tree()?;
+    let signature = Signature::now("Rafael Bachmann", "rafael.bachmann.93@gmail.com")?;
+    let parent_commit = find_last_commit(&repo)?;
+    let tree = repo.find_tree(oid)?;
+    repo.commit(Some("HEAD"),
+                &signature,
+                &signature,
+                message,
+                &tree,
+                &[&parent_commit])
+}
+
+fn get_quote() -> String {
+    String::from("Some stupid quote")
+}
+
+fn get_commit_message() -> String {
+    String::from("Get some real commit messages from whatthecommit.com")
+}
+
+fn find_last_commit(repo: &Repository) -> Result<Commit, git2::Error> {
+    let obj = repo.head()?.resolve()?.peel(ObjectType::Commit)?;
+    obj.into_commit().map_err(|_| git2::Error::from_str("Couldn't find commit"))
 }
