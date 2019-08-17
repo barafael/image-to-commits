@@ -1,26 +1,30 @@
 extern crate chrono;
-extern crate png;
-extern crate resize;
 extern crate clap;
 extern crate git2;
+extern crate png;
+extern crate reqwest;
+extern crate resize;
+extern crate select;
 
-use std::fs::OpenOptions;
-use git2::{Oid, Signature};
-use std::path::Path;
 use chrono::prelude::*;
+use clap::{App, Arg, SubCommand};
+use git2::{Commit, ObjectType, Repository};
+use git2::{Oid, Signature};
 use resize::Pixel::Gray8;
 use resize::Type::Triangle;
+use select::node::Children;
+use select::predicate::Child;
 use std::env;
 use std::error::Error;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::prelude::*;
-use std::io::{BufRead};
+use std::io::BufRead;
 use std::io::BufReader;
-use std::ops::Add;
-use std::time::Duration;
-use clap::{Arg, App, SubCommand};
 use std::io::Write;
-use git2::{Commit, ObjectType, Repository};
+use std::ops::Add;
+use std::path::Path;
+use std::time::Duration;
 
 fn main() {
     let matches = App::new("image-to-commits")
@@ -69,7 +73,11 @@ fn main() {
     let relative_path = Path::new("quotes.txt");
     {
         let file_path = Path::new(repo_root).join(relative_path);
-        let mut file = OpenOptions::new().write(true).create(true).open(file_path).expect("Could not create quotes file!");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(file_path)
+            .expect("Could not create quotes file!");
         file.write_all(get_quote().as_bytes()).unwrap();
     }
     let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
@@ -95,7 +103,7 @@ fn main() {
     println!("found stamp! {}", stamp);
 
     let stamp_date = NaiveDateTime::from_timestamp(stamp, 0);
-    println!( "stamp init date: {}", stamp_date);
+    println!("stamp init date: {}", stamp_date);
 
     let one_day_after = NaiveDateTime::from_timestamp(stamp + 60 * 60 * 24, 0);
     dbg!(one_day_after);
@@ -103,7 +111,6 @@ fn main() {
     let mut year = resize_to_year(image_file_name);
 
     let index = nth_day_of_year(363, &year);
-    //year[index] = 255;
     for pixel in &mut year {
         *pixel = (*pixel / 10) * 10;
     }
@@ -167,12 +174,20 @@ fn add_and_commit(repo: &Repository, path: &Path, message: &str) -> Result<Oid, 
     let signature = Signature::now("Rafael Bachmann", "rafael.bachmann.93@gmail.com")?;
     let parent_commit = find_last_commit(&repo)?;
     let tree = repo.find_tree(oid)?;
-    repo.commit(Some("HEAD"),
-                &signature,
-                &signature,
-                message,
-                &tree,
-                &[&parent_commit])
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        message,
+        &tree,
+        &[&parent_commit],
+    )
+}
+
+fn find_last_commit(repo: &Repository) -> Result<Commit, git2::Error> {
+    let obj = repo.head()?.resolve()?.peel(ObjectType::Commit)?;
+    obj.into_commit()
+        .map_err(|_| git2::Error::from_str("Couldn't find commit"))
 }
 
 fn get_quote() -> String {
@@ -180,10 +195,21 @@ fn get_quote() -> String {
 }
 
 fn get_commit_message() -> String {
-    String::from("Get some real commit messages from whatthecommit.com")
-}
+    use select::document::Document;
+    use select::predicate::Name;
 
-fn find_last_commit(repo: &Repository) -> Result<Commit, git2::Error> {
-    let obj = repo.head()?.resolve()?.peel(ObjectType::Commit)?;
-    obj.into_commit().map_err(|_| git2::Error::from_str("Couldn't find commit"))
+    let mut resp =
+        reqwest::get("http://whatthecommit.com").expect("Could not get commit message page!");
+    assert!(resp.status().is_success());
+
+    let doc = Document::from_read(resp).unwrap();
+    doc.find(Name("p"))
+        .nth(0)
+        .expect("unexpected format")
+        .children()
+        .nth(0)
+        .expect("unexpected format")
+        .as_text()
+        .expect("unexpected format")
+        .to_string()
 }
