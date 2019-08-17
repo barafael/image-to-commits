@@ -1,6 +1,7 @@
 extern crate chrono;
 extern crate png;
 extern crate resize;
+extern crate clap;
 
 use chrono::prelude::*;
 use resize::Pixel::Gray8;
@@ -9,23 +10,53 @@ use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::{self, BufRead};
+use std::io::{BufRead};
 use std::path::Path;
 use std::io::BufReader;
+use std::ops::Add;
+use std::time::Duration;
+use clap::{Arg, App, SubCommand};
 
 fn main() {
-    let args: Vec<_> = env::args().collect();
-    if args.len() == 2 {
-        if args[1] == String::from("init") {
+    let matches = App::new("image-to-commits")
+        .version("0.1")
+        .author("Rafael B. <rafael.bachmann.93@gmail.com>")
+        .about("Generate a slow-moving image on the github contributions banner pixel by pixel over an entire year.")
+        .arg(Arg::with_name("image")
+            .short("i")
+            .long("image")
+            .value_name("image.png")
+            .help("Sets an input image file. Must be grayscale png.")
+            .required(true)
+            .takes_value(true))
+        .subcommand(SubCommand::with_name("init")
+            .about("initializes directory with current timestamp.")
+            .version("0.1")
+            .author("Rafael B. <rafael.bachmann.93@gmail.com>")
+            .arg(Arg::with_name("repo-url")
+                     .short("r")
+                     .long("repo-url")
+                     .value_name("<url to your repo>")
+                     .help("Sets the github repo to use")
+                     .required(true)
+                     .takes_value(true)))
+        .get_matches();
+
+    if let Some(matches) = matches.subcommand_matches("init") {
+        if let Some(url) = matches.value_of("repo-url") {
+            println!("Initializing timestamp! Repo url: {}", url);
             init_stamp();
-            return;
         } else {
-            println!("todo: clap and usage");
+            eprintln!("Must supply a repo url to start with.");
             return;
         }
-    } else if args.len() != 3 {
-        return println!("Usage: {} in.png repo-url", args[0]);
     }
+    let image_file_name = if let Some(image) = matches.value_of("image") {
+        image
+    } else {
+        println!("Must supply an image file!");
+        return;
+    };
 
     let stamp = if let Ok(file) = File::open("init_timestamp.txt") {
         let mut reader = BufReader::new(file);
@@ -39,13 +70,19 @@ fn main() {
             }
         }
     } else {
-        println!("Timestamp file not found!");
+        println!("Timestamp file not found. Init first!");
         return;
     };
 
     println!("found stamp! {}", stamp);
 
-    let mut year = resize_to_year(&args[1]);
+    let stamp_date = NaiveDateTime::from_timestamp(stamp, 0);
+    println!( "stamp init date: {}", stamp_date);
+
+    let one_day_after = NaiveDateTime::from_timestamp(stamp + 60 * 60 * 24, 0);
+    dbg!(one_day_after);
+
+    let mut year = resize_to_year(image_file_name);
 
     let index = nth_day_of_year(363, &year);
     //year[index] = 255;
