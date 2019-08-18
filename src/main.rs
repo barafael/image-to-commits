@@ -9,26 +9,18 @@ extern crate select;
 use chrono::prelude::*;
 use clap::{App, Arg, SubCommand};
 use git2::{
-    Commit, Cred, CredentialType, Direction, ObjectType, Oid, RemoteCallbacks, Repository,
-    Signature,
+    Commit, CredentialType, Direction, ObjectType, Oid, RemoteCallbacks, Repository, Signature,
 };
 use resize::Pixel::Gray8;
 use resize::Type::Triangle;
-use select::node::Children;
-use select::predicate::Child;
-use std::env;
 use std::error::Error;
-use std::fs::canonicalize;
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::io::prelude::*;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
-use std::ops::Add;
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
 
 fn main() {
     let matches = App::new("image-to-commits")
@@ -99,7 +91,7 @@ fn main() {
         let _len = reader.read_line(&mut line);
         match line.trim().parse::<i64>() {
             Ok(num) => num,
-            Err(e) => {
+            Err(_e) => {
                 println!("timestamp file unreadable!");
                 return;
             }
@@ -119,7 +111,7 @@ fn main() {
 
     let mut year = resize_to_year(image_file_name);
 
-    let index = nth_day_of_year(363, &year);
+    let _index = nth_day_of_year(363, &year);
     for pixel in &mut year {
         *pixel = (*pixel / 10) * 10;
     }
@@ -168,7 +160,7 @@ fn resize_to_year(filename: &str) -> Vec<u8> {
     dst
 }
 
-fn nth_day_of_year(day: usize, year: &Vec<u8>) -> usize {
+fn nth_day_of_year(day: usize, year: &[u8]) -> usize {
     assert_eq!(52 * 7, year.len());
     assert!(day < year.len());
     let row = day / 7;
@@ -227,7 +219,7 @@ fn get_commit_message() -> String {
     use select::document::Document;
     use select::predicate::Name;
 
-    let mut resp =
+    let resp =
         reqwest::get("http://whatthecommit.com").expect("Could not get commit message page!");
     assert!(resp.status().is_success());
 
@@ -244,9 +236,9 @@ fn get_commit_message() -> String {
 }
 
 pub fn git_credentials_callback(
-    user: &str,
-    something: Option<&str>,
-    cred: CredentialType,
+    _user: &str,
+    _something: Option<&str>,
+    _cred: CredentialType,
 ) -> Result<git2::Cred, git2::Error> {
     git2::Cred::ssh_key(
         "git",
