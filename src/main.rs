@@ -8,14 +8,17 @@ extern crate select;
 
 use chrono::prelude::*;
 use clap::{App, Arg, SubCommand};
-use git2::{Commit, ObjectType, Repository};
-use git2::{Oid, Signature};
+use git2::{
+    Commit, Cred, CredentialType, Direction, ObjectType, Oid, RemoteCallbacks, Repository,
+    Signature,
+};
 use resize::Pixel::Gray8;
 use resize::Type::Triangle;
 use select::node::Children;
 use select::predicate::Child;
 use std::env;
 use std::error::Error;
+use std::fs::canonicalize;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
@@ -24,6 +27,7 @@ use std::io::BufReader;
 use std::io::Write;
 use std::ops::Add;
 use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
 fn main() {
@@ -67,7 +71,7 @@ fn main() {
         return;
     };
 
-    let repo_root = "../banner/";
+    let repo_root = "../banner-slowmo-art/";
     let repo = Repository::open(repo_root).expect("Couldn't open repository");
     println!("{} state={:?}", repo.path().display(), repo.state());
     let relative_path = Path::new("quotes.txt");
@@ -75,14 +79,19 @@ fn main() {
         let file_path = Path::new(repo_root).join(relative_path);
         let mut file = OpenOptions::new()
             .write(true)
-            .create(true)
+            .create_new(false)
             .open(file_path)
             .expect("Could not create quotes file!");
-        file.write_all(get_quote().as_bytes()).unwrap();
+        file.write_all(get_quote().as_bytes())
+            .expect("Could not write file");
     }
     let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
         .expect("Couldn't add file to repo");
     println!("New commit: {}", commit_id);
+
+    //push(&repo, "git@github.com:barafael/banner-slowmo-art.git")
+    push_raw()
+        .expect("Couldn't push to remote repo");
 
     let stamp = if let Ok(file) = File::open("init_timestamp.txt") {
         let mut reader = BufReader::new(file);
@@ -184,6 +193,26 @@ fn add_and_commit(repo: &Repository, path: &Path, message: &str) -> Result<Oid, 
     )
 }
 
+fn push_raw() -> std::io::Result<std::process::Output> {
+    Command::new("git")
+        .current_dir("../banner-slowmo-art")
+        .arg("push")
+        .output()
+}
+
+fn push(repo: &Repository, url: &str) -> Result<(), git2::Error> {
+    let mut remote = match repo.find_remote("origin") {
+        Ok(r) => r,
+        Err(_) => repo.remote("origin", url)?,
+    };
+    let mut cb = RemoteCallbacks::new();
+    cb.credentials(|x, y, z| git_credentials_callback(x, y, z));
+    remote
+        .connect_auth(Direction::Push, Some(cb), None)
+        .expect("Could not authenticate.");
+    remote.push(&["refs/heads/master:refs/heads/master"], None)
+}
+
 fn find_last_commit(repo: &Repository) -> Result<Commit, git2::Error> {
     let obj = repo.head()?.resolve()?.peel(ObjectType::Commit)?;
     obj.into_commit()
@@ -202,7 +231,7 @@ fn get_commit_message() -> String {
         reqwest::get("http://whatthecommit.com").expect("Could not get commit message page!");
     assert!(resp.status().is_success());
 
-    let doc = Document::from_read(resp).unwrap();
+    let doc = Document::from_read(resp).expect("could not read document");
     doc.find(Name("p"))
         .nth(0)
         .expect("unexpected format")
@@ -212,4 +241,17 @@ fn get_commit_message() -> String {
         .as_text()
         .expect("unexpected format")
         .to_string()
+}
+
+pub fn git_credentials_callback(
+    user: &str,
+    something: Option<&str>,
+    cred: CredentialType,
+) -> Result<git2::Cred, git2::Error> {
+    git2::Cred::ssh_key(
+        "git",
+        Some(Path::new("/home/ra/.ssh/id_rsa.pub")),
+        Path::new("/home/ra/.ssh/id_rsa"),
+        None,
+    )
 }
