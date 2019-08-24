@@ -51,6 +51,7 @@ fn main() {
         if let Some(url) = matches.value_of("repo-url") {
             println!("Initializing timestamp! Repo url: {}", url);
             init_stamp();
+            return;
         } else {
             eprintln!("Must supply a repo url to start with.");
             return;
@@ -62,28 +63,6 @@ fn main() {
         println!("Must supply an image file!");
         return;
     };
-
-    let repo_root = "../banner-slowmo-art/";
-    let repo = Repository::open(repo_root).expect("Couldn't open repository");
-    println!("{} state={:?}", repo.path().display(), repo.state());
-    let relative_path = Path::new("quotes.txt");
-    {
-        let file_path = Path::new(repo_root).join(relative_path);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(false)
-            .open(file_path)
-            .expect("Could not create quotes file!");
-        file.write_all(get_quote().as_bytes())
-            .expect("Could not write file");
-    }
-    let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
-        .expect("Couldn't add file to repo");
-    println!("New commit: {}", commit_id);
-
-    //push(&repo, "git@github.com:barafael/banner-slowmo-art.git")
-    push_raw()
-        .expect("Couldn't push to remote repo");
 
     let stamp = if let Ok(file) = File::open("init_timestamp.txt") {
         let mut reader = BufReader::new(file);
@@ -103,18 +82,33 @@ fn main() {
 
     println!("found stamp! {}", stamp);
 
-    let stamp_date = NaiveDateTime::from_timestamp(stamp, 0);
-    println!("stamp init date: {}", stamp_date);
-
-    let one_day_after = NaiveDateTime::from_timestamp(stamp + 60 * 60 * 24, 0);
-    dbg!(one_day_after);
+    let today_stamp = Local::now().timestamp();
+    let days_since_init = (today_stamp - stamp) / (60 * 60 * 24);
+    dbg!(days_since_init);
 
     let mut year = resize_to_year(image_file_name);
 
-    let _index = nth_day_of_year(363, &year);
     for pixel in &mut year {
-        *pixel = (*pixel / 10) * 10;
+        *pixel = (*pixel / 10);
     }
+
+    let index = nth_day_of_year(days_since_init as usize, &year);
+    let amount_today = year[index];
+    dbg!(amount_today);
+
+    let repo_root = "../banner-slowmo-art/";
+    let repo = Repository::open(repo_root).expect("Couldn't open repository");
+    println!("{} state={:?}", repo.path().display(), repo.state());
+    let relative_path = Path::new("quotes.txt");
+
+    for index in 0..amount_today {
+        write_quote(&Path::new(repo_root).join(relative_path).as_path());
+        let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
+            .expect("Couldn't add file to repo");
+        println!("New commit: {}", commit_id);
+    }
+
+    push_raw().expect("Couldn't push to remote repo");
 
     let outfh = File::create("scaled.png").expect("Couldn't create tmp output file");
     let encoder = png::Encoder::new(outfh, 52u32, 7u32);
@@ -123,6 +117,16 @@ fn main() {
         .unwrap()
         .write_image_data(&year)
         .unwrap();
+}
+
+fn write_quote(file_path: &Path) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(false)
+        .open(file_path)
+        .expect("Could not create quotes file!");
+    file.write_all(get_quote().as_bytes())
+        .expect("Could not write file");
 }
 
 fn init_stamp() {
@@ -219,9 +223,10 @@ fn get_commit_message() -> String {
     use select::document::Document;
     use select::predicate::Name;
 
-    let resp =
-        reqwest::get("http://whatthecommit.com").expect("Could not get commit message page!");
-    assert!(resp.status().is_success());
+    let resp = match reqwest::get("http://whatthecommit.com") {
+        Ok(resp) => resp,
+        Err(_e) => return String::from("Commit message here!"),
+    };
 
     let doc = Document::from_read(resp).expect("could not read document");
     doc.find(Name("p"))
@@ -242,8 +247,8 @@ pub fn git_credentials_callback(
 ) -> Result<git2::Cred, git2::Error> {
     git2::Cred::ssh_key(
         "git",
-        Some(Path::new("/home/ra/.ssh/id_rsa.pub")),
-        Path::new("/home/ra/.ssh/id_rsa"),
+        Some(Path::new("$HOME/.ssh/id_rsa.pub")),
+        Path::new("$HOME/.ssh/id_rsa"),
         None,
     )
 }
