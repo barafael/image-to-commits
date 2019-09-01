@@ -89,19 +89,19 @@ fn main() {
     let mut year = resize_to_year(image_file_name);
 
     for pixel in &mut year {
-        *pixel = (*pixel / 10);
+        *pixel = *pixel / 10;
     }
 
     let index = nth_day_of_year(days_since_init as usize, &year);
     let amount_today = year[index];
     dbg!(amount_today);
 
-    let repo_root = "../banner-slowmo-art/";
+    let repo_root = "/root/banner-slowmo-art/";
     let repo = Repository::open(repo_root).expect("Couldn't open repository");
     println!("{} state={:?}", repo.path().display(), repo.state());
     let relative_path = Path::new("quotes.txt");
 
-    for index in 0..amount_today {
+    for _ in 0..amount_today {
         write_quote(&Path::new(repo_root).join(relative_path).as_path());
         let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
             .expect("Couldn't add file to repo");
@@ -120,13 +120,17 @@ fn main() {
 }
 
 fn write_quote(file_path: &Path) {
+    dbg!(file_path);
     let mut file = OpenOptions::new()
         .write(true)
+        .append(true)
         .create_new(false)
         .open(file_path)
         .expect("Could not create quotes file!");
-    file.write_all(get_quote().as_bytes())
-        .expect("Could not write file");
+
+    if let Err(e) = writeln!(file, "{}", get_quote()) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
 }
 
 fn init_stamp() {
@@ -176,7 +180,7 @@ fn add_and_commit(repo: &Repository, path: &Path, message: &str) -> Result<Oid, 
     let mut index = repo.index()?;
     index.add_path(path)?;
     let oid = index.write_tree()?;
-    let signature = Signature::now("Rafael Bachmann", "rafael.bachmann.93@gmail.com")?;
+    let signature = Signature::now("Commits AndIssues", "commitsandissues@gmail.com")?;
     let parent_commit = find_last_commit(&repo)?;
     let tree = repo.find_tree(oid)?;
     repo.commit(
