@@ -1,11 +1,3 @@
-extern crate chrono;
-extern crate clap;
-extern crate git2;
-extern crate png;
-extern crate reqwest;
-extern crate resize;
-extern crate select;
-
 use chrono::prelude::*;
 use clap::{App, Arg, SubCommand};
 use git2::{
@@ -13,7 +5,6 @@ use git2::{
 };
 use resize::Pixel::Gray8;
 use resize::Type::Triangle;
-use std::error::Error;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::BufRead;
@@ -52,10 +43,9 @@ fn main() {
             println!("Initializing timestamp! Repo url: {}", url);
             init_stamp();
             return;
-        } else {
-            eprintln!("Must supply a repo url to start with.");
-            return;
         }
+        eprintln!("Must supply a repo url to start with.");
+        return;
     }
     let image_file_name = if let Some(image) = matches.value_of("image") {
         image
@@ -89,7 +79,7 @@ fn main() {
     let mut year = resize_to_year(image_file_name);
 
     for pixel in &mut year {
-        *pixel = *pixel / 10;
+        *pixel /= *pixel;
     }
 
     let index = nth_day_of_year(days_since_init as usize, &year);
@@ -102,8 +92,8 @@ fn main() {
     let relative_path = Path::new("quotes.txt");
 
     for _ in 0..amount_today {
-        write_quote(&Path::new(repo_root).join(relative_path).as_path());
-        let commit_id = add_and_commit(&repo, &relative_path, &get_commit_message())
+        write_quote(Path::new(repo_root).join(relative_path).as_path());
+        let commit_id = add_and_commit(&repo, relative_path, &get_commit_message())
             .expect("Couldn't add file to repo");
         println!("New commit: {}", commit_id);
     }
@@ -139,15 +129,11 @@ fn init_stamp() {
     let path = Path::new("init_timestamp.txt");
     let display = path.display();
     let mut file = match File::create(&path) {
-        Err(why) => panic!(
-            "couldn't create timestamp file {}: {}",
-            display,
-            why.description()
-        ),
+        Err(why) => panic!("couldn't create timestamp file {}: {}", display, why),
         Ok(file) => file,
     };
     match file.write_all(format!("{}", stamp).as_bytes()) {
-        Err(why) => panic!("couldn't write to {}: {}", display, why.description()),
+        Err(why) => panic!("couldn't write to {}: {}", display, why),
         Ok(_) => println!("successfully wrote to {}", display),
     }
 }
@@ -181,7 +167,7 @@ fn add_and_commit(repo: &Repository, path: &Path, message: &str) -> Result<Oid, 
     index.add_path(path)?;
     let oid = index.write_tree()?;
     let signature = Signature::now("Commits AndIssues", "commitsandissues@gmail.com")?;
-    let parent_commit = find_last_commit(&repo)?;
+    let parent_commit = find_last_commit(repo)?;
     let tree = repo.find_tree(oid)?;
     repo.commit(
         Some("HEAD"),
@@ -200,13 +186,14 @@ fn push_raw() -> std::io::Result<std::process::Output> {
         .output()
 }
 
+#[allow(unused)]
 fn push(repo: &Repository, url: &str) -> Result<(), git2::Error> {
     let mut remote = match repo.find_remote("origin") {
         Ok(r) => r,
         Err(_) => repo.remote("origin", url)?,
     };
     let mut cb = RemoteCallbacks::new();
-    cb.credentials(|x, y, z| git_credentials_callback(x, y, z));
+    cb.credentials(git_credentials_callback);
     remote
         .connect_auth(Direction::Push, Some(cb), None)
         .expect("Could not authenticate.");
@@ -234,10 +221,10 @@ fn get_commit_message() -> String {
 
     let doc = Document::from_read(resp).expect("could not read document");
     doc.find(Name("p"))
-        .nth(0)
+        .next()
         .expect("unexpected format")
         .children()
-        .nth(0)
+        .next()
         .expect("unexpected format")
         .as_text()
         .expect("unexpected format")
