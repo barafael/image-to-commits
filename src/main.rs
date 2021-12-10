@@ -227,7 +227,7 @@ fn get_commit_message() -> String {
     use select::document::Document;
     use select::predicate::Name;
 
-    let resp = match reqwest::get("http://whatthecommit.com") {
+    let resp = match reqwest::blocking::get("http://whatthecommit.com") {
         Ok(resp) => resp,
         Err(_e) => return String::from("Commit message here!"),
     };
