@@ -150,7 +150,7 @@ fn resize_to_year(filename: &str) -> Vec<u8> {
     let (w1, h1) = (info.width as usize, info.height as usize);
     let (w2, h2) = (52, 7);
     let mut dst = vec![0; w2 * h2];
-    resize::resize(w1, h1, w2, h2, Gray8, Triangle, &src, &mut dst);
+    resize::new(w1, h1, w2, h2, Gray8, Triangle).resize(&src, &mut dst);
     dst
 }
 
